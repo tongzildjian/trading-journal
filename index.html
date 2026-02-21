@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>XAUUSD Trading Journal</title>
+    <title>XAUUSD Trading Journal (Cloud Sync)</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -19,13 +19,14 @@
         .table { color: var(--text); }
         .win { color: var(--success); }
         .loss { color: var(--danger); }
+        #syncStatus { font-size: 12px; margin-left: 10px; }
     </style>
 </head>
 <body>
     <div class="container py-4">
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h4>🏆 XAUUSD Trading Journal</h4>
-            <button class="btn btn-outline-light btn-sm" onclick="clearData()">ล้างข้อมูล</button>
+            <h4>🏆 Trading Journal <span id="syncStatus" class="badge bg-secondary">Syncing...</span></h4>
+            <button class="btn btn-outline-light btn-sm" onclick="fetchFromCloud()">รีเฟรชข้อมูล</button>
         </div>
 
         <!-- Stats Section -->
@@ -58,7 +59,7 @@
 
         <!-- Entry Form -->
         <div class="card p-4 mb-4">
-            <h6 class="mb-3">📝 บันทึกการเทรด</h6>
+            <h6 class="mb-3">📝 บันทึกการเทรดใหม่</h6>
             <form id="tradeForm">
                 <div class="row g-3">
                     <div class="col-md-6">
@@ -88,7 +89,7 @@
                         <input type="number" step="0.01" class="form-control" id="tp" placeholder="0.00">
                     </div>
                     <div class="col-12">
-                        <button type="submit" class="btn btn-primary w-100">บันทึกข้อมูล</button>
+                        <button type="submit" id="saveBtn" class="btn btn-primary w-100">บันทึกลง Cloud (Google Sheets)</button>
                     </div>
                 </div>
             </form>
@@ -96,7 +97,7 @@
 
         <!-- History Table -->
         <div class="card">
-            <div class="p-3 border-bottom border-secondary">ประวัติล่าสุด (10 รายการ)</div>
+            <div class="p-3 border-bottom border-secondary">ประวัติล่าสุด (ซิงค์จาก Google Sheets)</div>
             <div class="table-responsive">
                 <table class="table mb-0">
                     <thead>
@@ -114,30 +115,77 @@
     </div>
 
     <script>
-        let trades = JSON.parse(localStorage.getItem('trading_trades') || '[]');
+        const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbw4g1UT_3ZdP_Xae8oRwzGxvaeokUVY1aCKpQ75ItfFL36M3M_7ZmuVDrBdLCYm6KA/exec';
+        let trades = [];
 
-        document.getElementById('tradeForm').onsubmit = function(e) {
+        async function fetchFromCloud() {
+            setSyncStatus('Syncing...', 'secondary');
+            try {
+                const response = await fetch(CLOUD_URL);
+                const data = await response.json();
+                
+                // กรองข้อมูล: กรองแถวที่ว่าง หรือแถวที่เป็น Header (ถ้ามี)
+                const filteredData = data.filter(row => row[0] && row[0] !== "" && row[0] !== "วัน/เวลา");
+
+                trades = filteredData.map(row => ({
+                    time: row[0],
+                    dir: row[1] === 'Long' ? '📈' : '📉',
+                    pips: parseInt(row[5]) || 0,
+                    res: row[6] === 'Win' ? '✅' : '❌',
+                    dateOnly: row[0] ? new Date(row[0].replace(/-/g, '/')).toDateString() : ''
+                })).reverse();
+
+                updateUI();
+                setSyncStatus('Online', 'success');
+            } catch (err) {
+                console.error(err);
+                setSyncStatus('Error', 'danger');
+            }
+        }
+
+        document.getElementById('tradeForm').onsubmit = async function(e) {
             e.preventDefault();
+            const saveBtn = document.getElementById('saveBtn');
+            saveBtn.disabled = true;
+            saveBtn.innerText = 'กำลังบันทึก...';
+
             const entry = parseFloat(document.getElementById('entry').value);
             const sl = parseFloat(document.getElementById('sl').value);
             const tp = parseFloat(document.getElementById('tp').value);
             const res = document.getElementById('result').value;
             const dir = document.getElementById('direction').value;
+            const pips = res === 'Win' ? Math.round(Math.abs(tp - entry) * 100) : -Math.round(Math.abs(entry - sl) * 100);
 
-            const pips = res === 'Win' ? Math.abs(tp - entry) : -Math.abs(entry - sl);
-            
-            const trade = {
+            const tradeData = {
                 time: new Date().toLocaleString('th-TH'),
-                dateOnly: new Date().toDateString(),
-                dir: dir === 'Long' ? '📈' : '📉',
-                pips: Math.round(pips * 100),
-                res: res === 'Win' ? '✅' : '❌'
+                dir: dir,
+                entry: entry,
+                sl: sl,
+                tp: tp,
+                pips: pips,
+                res: res
             };
 
-            trades.unshift(trade);
-            localStorage.setItem('trading_trades', JSON.stringify(trades));
-            updateUI();
-            this.reset();
+            try {
+                await fetch(CLOUD_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    cache: 'no-cache',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(tradeData)
+                });
+                
+                // หลังจากบันทึก ให้รอแป๊บนึงแล้วโหลดใหม่
+                setTimeout(() => {
+                    fetchFromCloud();
+                    this.reset();
+                    saveBtn.disabled = false;
+                    saveBtn.innerText = 'บันทึกลง Cloud (Google Sheets)';
+                }, 2000);
+            } catch (err) {
+                alert('บันทึกผิดพลาด!');
+                saveBtn.disabled = false;
+            }
         };
 
         function updateUI() {
@@ -154,21 +202,19 @@
             document.getElementById('totalTrades').innerText = trades.length;
             const wins = trades.filter(t => t.res === '✅').length;
             document.getElementById('winRate').innerText = trades.length ? Math.round((wins/trades.length)*100) + '%' : '0%';
-            const totalPips = trades.reduce((sum, t) => sum + t.pips, 0);
+            const totalPips = trades.reduce((sum, t) => sum + (t.pips || 0), 0);
             document.getElementById('totalPL').innerText = (totalPips > 0 ? '+' : '') + totalPips;
             const today = new Date().toDateString();
             document.getElementById('todayTrades').innerText = trades.filter(t => t.dateOnly === today).length;
         }
 
-        function clearData() {
-            if(confirm('ยืนยันล้างข้อมูลทั้งหมด?')) {
-                trades = [];
-                localStorage.removeItem('trading_trades');
-                updateUI();
-            }
+        function setSyncStatus(text, type) {
+            const el = document.getElementById('syncStatus');
+            el.innerText = text;
+            el.className = `badge bg-${type}`;
         }
 
-        updateUI();
+        fetchFromCloud();
     </script>
 </body>
 </html>
