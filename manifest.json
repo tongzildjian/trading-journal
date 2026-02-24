@@ -1,0 +1,21 @@
+{
+    "name": "Expense Tracker PWA",
+    "short_name": "Tracker",
+    "description": "Personal Expense Tracker synced with Google Sheet.",
+    "start_url": "./tongzhome.html",
+    "display": "standalone",
+    "background_color": "#1a1c23",
+    "theme_color": "#6c5dd3",
+    "icons": [
+        {
+            "src": "icon-192x192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icon-512x512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}

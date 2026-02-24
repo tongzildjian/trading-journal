@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Expense Tracker PWA</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="manifest" href="./manifest.json">
+    <style>
+        :root { --bg: #1a1c23; --card: #242731; --text: #ffffff; --primary: #6c5dd3; --success: #4ade80; --danger: #ff6b6b; }
+        body { background-color: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; padding-bottom: 100px; }
+        .card { background-color: var(--card); border: none; border-radius: 16px; color: var(--text); }
+        .form-control, .form-select { background-color: #1f2128; border: 1px solid #353945; color: white; border-radius: 10px; }
+        .form-control:focus { background-color: #1f2128; color: white; border-color: var(--primary); box-shadow: none; }
+        .btn-primary { background-color: var(--primary); border: none; border-radius: 10px; padding: 10px; }
+        .table { color: var(--text); }
+        #syncStatus { font-size: 12px; margin-left: 10px; }
+        .nav-link { color: white !important; }
+        .nav-link.active { color: var(--primary) !important; border-bottom: 2px solid var(--primary); }
+    </style>
+</head>
+<body>
+    <div class="container py-3">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h4>🏠 Home Finance <span id="syncStatus" class="badge bg-secondary">Connecting...</span></h4>
+            <button class="btn btn-outline-light btn-sm" onclick="loadData()">รีเฟรชข้อมูล</button>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <ul class="nav nav-tabs mb-3" id="myTab" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="entry-tab" data-bs-toggle="tab" data-bs-target="#entry" type="button" role="tab">บันทึก</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="summary-tab" data-bs-toggle="tab" data-bs-target="#summary" type="button" role="tab">สรุป</button>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="myTabContent">
+            
+            <!-- Entry Tab -->
+            <div class="tab-pane fade show active" id="entry" role="tabpanel" aria-labelledby="entry-tab">
+                <div class="card p-4 mb-4">
+                    <h6 class="mb-3">📝 บันทึกรายการใหม่</h6>
+                    <form id="financeForm">
+                        <div class="row g-3">
+                            <div class="col-6">
+                                <label class="form-label">ประเภท</label>
+                                <select class="form-select" id="type" required>
+                                    <option value="Expense">❌ รายจ่าย</option>
+                                    <option value="Income">✅ รายรับ</option>
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">หมวดหมู่</label>
+                                <select class="form-select" id="category" required>
+                                    <!-- Options will be populated by JS -->
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">จำนวนเงิน</label>
+                                <input type="number" step="0.01" class="form-control" id="amount" placeholder="0.00" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">วันที่ (ถ้าไม่ระบุ ใช้เป็นวันนี้)</label>
+                                <input type="date" class="form-control" id="date">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">คำอธิบาย (ไม่บังคับ)</label>
+                                <input type="text" class="form-control" id="description" placeholder="เช่น ค่ากาแฟ, เงินเดือนเข้า">
+                            </div>
+                            <div class="col-12">
+                                <button type="submit" id="saveBtn" class="btn btn-primary w-100">บันทึก</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Summary Tab -->
+            <div class="tab-pane fade" id="summary" role="tabpanel" aria-labelledby="summary-tab">
+                <div class="card p-3 mb-3">
+                    <h6>📊 สรุปยอดรวม</h6>
+                    <div class="row text-center">
+                        <div class="col-6"><div class="stat-label">รายรับรวม</div><div class="stat-value text-success" id="totalIncome">0</div></div>
+                        <div class="col-6"><div class="stat-label">รายจ่ายรวม</div><div class="stat-value text-danger" id="totalExpense">0</div></div>
+                    </div>
+                    <div class="mt-2"><div class="stat-label">กำไร/ขาดทุนสุทธิ</div><div class="stat-value" id="netBalance">0</div></div>
+                </div>
+                
+                <div class="card p-3 mb-3">
+                    <label class="form-label">ตัวกรองช่วงเวลา</label>
+                    <select class="form-select" id="filterRange">
+                        <option value="day">รายวัน</option>
+                        <option value="month" selected>รายเดือน (ปัจจุบัน)</option>
+                        <option value="year">รายปี</option>
+                    </select>
+                </div>
+
+                <div class="card p-3 mb-4">
+                    <h6 class="mb-3">📈 กราฟรายจ่ายตามหมวดหมู่</h6>
+                    <canvas id="expenseChart"></canvas>
+                </div>
+
+                <div class="card p-3">
+                    <h6 class="mb-3">🧾 ประวัติรายการล่าสุด</h6>
+                    <div class="table-responsive">
+                        <table class="table table-striped mb-0">
+                            <thead>
+                                <tr><th>วันที่</th><th>หมวดหมู่</th><th>จำนวน</th></tr>
+                            </thead>
+                            <tbody id="historyBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyLG7ISUswAanVxDzH9iVkIr3D0eWa-l7FS4RPx8B9bFDaodLQfD4ShLs5EfD3Krl4cZw/exec';
+        let allTransactions = [];
+        const CATEGORIES_INCOME = ["เงินเดือนประจำ", "Freelance"];
+        const CATEGORIES_EXPENSE = ["เงินให้ภรรยา", "ผ่อน KBank", "ผ่อน CIMB", "ผ่อน UOB", "ผ่อน TTB", "เติม Gas/น้ำมัน", "Shopee/Lazada/Tiktok", "ค่าอาหาร/ร้านสะดวกซื้อ"];
+        let expenseChart;
+
+        // --- UTILITIES ---
+        function setSyncStatus(text, type) {
+            const el = document.getElementById('syncStatus');
+            el.innerText = text;
+            el.className = `badge bg-${type}`;
+        }
+
+        function formatDate(dateStr) {
+            const d = new Date(dateStr);
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+        
+        function getDisplayDate(dateStr, range) {
+            const d = new Date(dateStr.replace(/-/g, '/'));
+            if (range === 'day') return formatDate(dateStr);
+            if (range === 'month') return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            if (range === 'year') return `${d.getFullYear()}`;
+            return dateStr;
+        }
+
+        // --- SETUP ---
+        function setupCategories() {
+            const catSelect = document.getElementById('category');
+            catSelect.innerHTML = '';
+            const currentType = document.getElementById('type').value;
+            const categories = currentType === 'Income' ? CATEGORIES_INCOME : CATEGORIES_EXPENSE;
+            
+            categories.forEach(cat => {
+                catSelect.innerHTML += `<option value="${cat}">${cat}</option>`;
+            });
+        }
+        document.getElementById('type').onchange = setupCategories;
+        setupCategories(); // Initial setup
+
+        // --- DATA FETCH & SYNC ---
+        async function loadData() {
+            setSyncStatus('Syncing...', 'secondary');
+            try {
+                const response = await fetch(CLOUD_URL);
+                const rawData = await response.json();
+                
+                if (Array.isArray(rawData)) {
+                    allTransactions = rawData.map(row => ({
+                        timestamp: row[0],
+                        dateStr: formatDate(new Date(row[1])),
+                        type: row[2],
+                        category: row[3],
+                        amount: parseFloat(row[4]) || 0,
+                        description: row[5] || ''
+                    })).filter(t => !isNaN(t.amount) && t.amount > 0);
+                } else {
+                    allTransactions = [];
+                }
+                
+                updateInputDate();
+                updateSummaryUI();
+                setSyncStatus('Online', 'success');
+            } catch (err) {
+                console.error("Error loading data:", err);
+                setSyncStatus('Error', 'danger');
+            }
+        }
+
+        document.getElementById('financeForm').onsubmit = async function(e) {
+            e.preventDefault();
+            const saveBtn = document.getElementById('saveBtn');
+            saveBtn.disabled = true;
+            saveBtn.innerText = 'Saving...';
+
+            const tradeData = {
+                date: document.getElementById('date').value || formatDate(new Date()),
+                type: document.getElementById('type').value,
+                category: document.getElementById('category').value,
+                amount: parseFloat(document.getElementById('amount').value),
+                description: document.getElementById('description').value
+            };
+
+            try {
+                await fetch(CLOUD_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    body: JSON.stringify(tradeData)
+                });
+                
+                setTimeout(() => {
+                    loadData();
+                    this.reset();
+                    setupCategories();
+                    updateInputDate();
+                    saveBtn.disabled = false;
+                    saveBtn.innerText = 'บันทึก';
+                }, 1500);
+            } catch (err) {
+                alert('บันทึกผิดพลาด!');
+                saveBtn.disabled = false;
+            }
+        };
+        
+        function updateInputDate() {
+             document.getElementById('date').value = formatDate(new Date());
+        }
+
+        // --- SUMMARY & CHART ---
+        function updateSummaryUI() {
+            const range = document.getElementById('filterRange').value;
+            const today = formatDate(new Date());
+            const currentMonth = getDisplayDate(today, 'month');
+            const currentYear = getDisplayDate(today, 'year');
+
+            const filteredTransactions = allTransactions.filter(t => {
+                const tDate = getDisplayDate(t.dateStr, range);
+                if (range === 'day') return tDate === today;
+                if (range === 'month') return tDate === currentMonth;
+                if (range === 'year') return tDate === currentYear;
+                return true;
+            });
+
+            let totalIncome = 0;
+            let totalExpense = 0;
+            const categoryMap = {};
+
+            filteredTransactions.forEach(t => {
+                if (t.type === 'Income') {
+                    totalIncome += t.amount;
+                } else if (t.type === 'Expense') {
+                    totalExpense += t.amount;
+                    categoryMap[t.category] = (categoryMap[t.category] || 0) + t.amount;
+                }
+            });
+
+            const netBalance = totalIncome - totalExpense;
+
+            document.getElementById('totalIncome').innerText = totalIncome.toLocaleString('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 2 });
+            document.getElementById('totalExpense').innerText = totalExpense.toLocaleString('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 2 });
+            document.getElementById('netBalance').innerText = netBalance.toLocaleString('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 2 });
+            document.getElementById('netBalance').className = `stat-value ${netBalance >= 0 ? 'text-success' : 'text-danger'}`;
+
+            updateHistoryTable(filteredTransactions.slice(0, 15).reverse());
+            updateChart(categoryMap, range);
+        }
+
+        function updateHistoryTable(list) {
+            const body = document.getElementById('historyBody');
+            body.innerHTML = list.map(t => `
+                <tr>
+                    <td>${t.dateStr}</td>
+                    <td>${t.category}</td>
+                    <td class="${t.type === 'Income' ? 'text-success' : 'text-danger'}">${t.amount.toLocaleString('th-TH', { style: 'currency', currency: 'THB', minimumFractionDigits: 2 })}</td>
+                </tr>
+            `).join('');
+        }
+
+        function updateChart(categoryMap, range) {
+            const labels = Object.keys(categoryMap);
+            const data = Object.values(categoryMap);
+
+            if (expenseChart) {
+                expenseChart.destroy();
+            }
+
+            const ctx = document.getElementById('expenseChart').getContext('2d');
+            expenseChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Expense Total',
+                        data: data,
+                        backgroundColor: generateColors(labels.length),
+                        hoverOffset: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { labels: { color: 'white' } },
+                        title: { display: true, text: `รายจ่าย (${range})`, color: 'white' }
+                    }
+                }
+            });
+        }
+        
+        function generateColors(count) {
+            const colors = ['#6c5dd3', '#4ade80', '#ff6b6b', '#ffc107', '#0d6efd', '#6f42c1', '#17a2b8', '#fd7e14'];
+            return Array.from({ length: count }, (_, i) => colors[i % colors.length]);
+        }
+
+        document.getElementById('filterRange').onchange = updateSummaryUI;
+        
+        // --- INITIALIZE ---
+        loadData();
+
+        // Register Service Worker for PWA
+        if ('serviceWorker' in navigator) {
+          window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js').then(registration => {
+              console.log('SW registered: ', registration);
+            }).catch(registrationError => {
+              console.log('SW registration failed: ', registrationError);
+            });
+          });
+        }
+    </script>
+</body>
+</html>
